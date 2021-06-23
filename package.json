@@ -1,0 +1,30 @@
+{
+  "name": "contracts",
+  "version": "1.0.0",
+  "description": "��#\u0000 \u0000c\u0000o\u0000n\u0000t\u0000r\u0000a\u0000c\u0000t\u0000s\u0000\r\u0000 \u0000",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/autonet-code/contracts.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/autonet-code/contracts/issues"
+  },
+  "homepage": "https://github.com/autonet-code/contracts#readme",
+  "dependencies": {
+    "hardhat": "^2.4.1"
+  },
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.0.2",
+    "@nomiclabs/hardhat-waffle": "^2.0.1",
+    "chai": "^4.3.4",
+    "ethereum-waffle": "^3.4.0",
+    "ethers": "^5.3.1"
+  }
+}
