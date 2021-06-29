@@ -20,15 +20,29 @@ import "http://github.com/OpenZeppelin/openzeppelin-contracts/blob/v3.2.1-solc-0
 contract Agent is ERC721 {
     uint256 public nextTokenId;
     address public admin;
-
+    address public project;   // shall the admin be the project. For now: Yes!
+    string private endpoint;
+    
     constructor() ERC721("Autonet Project", "ATP") {
         admin = msg.sender;
+        project = admin;
     }
 
     function mint(address to) external {
         require(msg.sender == admin, "only admin");
         _safeMint(to, nextTokenId);
         nextTokenId++;
+    }
+    
+    function getEndpoint() external returns(string memory) {
+        require(msg.sender==project, "only the parent Preoject can get the endpoint for this token");
+        return endpoint;
+    }
+    
+    function setEndpoint(string memory _endpoint) external returns(bool) {
+        require(msg.sender==project, "only the parent Preoject can get the endpoint for this token");
+        endpoint = _endpoint;
+        return true;
     }
 
     function _baseURI() internal pure returns (string memory) {
@@ -44,15 +58,25 @@ contract Project is IERC777Recipient{
     string public name;
     string public description;
     string public catpicgit;
+    string private endpoint;
     MainToken banu; 
     Source source;
     address sourceContractAddress;
-    bool mature = false;
-    mapping(address => uint256) public shareholders;
+    
+    enum status { investing, training, validating, mature}
+    status projectStatus;
+    address founder;
+    address deployer;
+    mapping(address => uint256) public shares;
     uint256 public spentOnTraining;
-    uint256 public availableShares = 930000;
-    uint256 initialTrainingCost = 1547000000000000000;
-    uint256 pricePerShare;
+    uint256 public availableShares = 930 * (10**3);
+    uint256 public founderShares = 70 * (10**3);
+    uint256 public initialTrainingCost = 1547 * (10**15);
+    uint256 public pricePerShare = initialTrainingCost / availableShares;
+    uint256 public fundingGoal;
+    uint256 public founderDividendPermille;
+    
+    mapping(address => uint256) public subscription;  // ATNbalance
     uint256 lastPayout;
 
     IERC1820Registry private _erc1820 = IERC1820Registry(0x1820a4B7618BdE71Dce8cdc73aAB6C95905faD24);
@@ -69,11 +93,26 @@ contract Project is IERC777Recipient{
         string memory _description,
         string memory _picurl,
         string memory _category,
-        address founder
+        address _founder,
+        uint256 _fundingGoal,
+        uint256 _founderDividendPermille
     ) payable {
         banu = MainToken(adresaLaBanu);
         sourceContractAddress = adresaLaSource;
         source = Source(adresaLaSource);
+        founder = _founder;
+        founderDividendPermille = _founderDividendPermille;
+        fundingGoal = _fundingGoal;
+        projectStatus = _reachedFundingGoal() ? status.training : status.investing; 
+        
+        deployer = msg.sender;
+        name = _name;
+        code = _code;
+        category = _category;
+        description = _description;
+        picurl = _picurl;
+        shares[founder] = founderShares;
+        catpicgit = append(category, picurl, code);
         
         _erc1820.setInterfaceImplementer(
             address(this),
@@ -81,16 +120,48 @@ contract Project is IERC777Recipient{
             address(this)
         );
         
-        pricePerShare = initialTrainingCost / 930000;
-        name = _name;
-        code = _code;
-        category = _category;
-        description = _description;
-        picurl = _picurl;
-        shareholders[founder] = 70000;
-        catpicgit = append(category, picurl, code);
     }
 
+    
+    function changeCodeUrl(string memory url) external onlyDeployerOrFounder {
+        code = url;
+    }
+    
+    function transferFoundership(address newFounder) external onlyDeployerOrFounder {
+        founder = newFounder;
+    }
+    
+    function completeTraining(string memory api) public {
+        if (projectStatus == status.training){
+            projectStatus = status.validating;
+            // now starts the validation. 
+            // here we just declare validation completed
+            endpoint=api;
+            completeValidation();
+        }
+    }
+    
+    function completeValidation() public {
+        if (projectStatus == status.validating){
+            projectStatus = status.mature;
+            model = new Agent();
+            model.mint(address(this));
+            model.setEndpoint(endpoint);
+        }
+    }
+    
+    function subscribe(uint256 ATNamount) external payable {
+        // maybe invest can be changed in the future
+        source.invest(msg.sender, address(this), ATNamount, msg.value);
+        subscription[msg.sender] += ATNamount;
+    }
+    
+    function requestEndpoint() external returns (string memory) {
+        require(subscription[msg.sender]>0, "not enough funds in your subscription!");
+        return model.getEndpoint();
+    }
+    
+    
     function balanceATN() public view returns (uint256) {
         return banu.balanceOf(address(this));
     }
@@ -107,6 +178,7 @@ contract Project is IERC777Recipient{
         return string(abi.encodePacked(a, b, c));
     }
 
+    
     function details()
         public
         view
@@ -124,12 +196,12 @@ contract Project is IERC777Recipient{
             ATNamount / pricePerShare <= availableShares,
             "Can't buy more than he available shares"
         );
-        // banu.transferFrom(msg.sender, address(this), amount);
         source.registerHookForAccount(msg.sender);
         source.invest(msg.sender, address(this), ATNamount, msg.value);
-        // if (shareholders[msg.sender] > 0) {
-        //     shareholders[msg.sender] = shareholders[msg.sender] + uint256(ATNamount / pricePerShare);
-        // }
+        if (_reachedFundingGoal()){
+            projectStatus = status.training;
+            source.startTraining(address(this), code);
+        } 
     }
 
     
@@ -137,13 +209,19 @@ contract Project is IERC777Recipient{
         external
     {   
         require(msg.sender==sourceContractAddress, "only the source contract may change the shares");
-        shareholders[investor] += ATNamount / pricePerShare;
+        shares[investor] += ATNamount / pricePerShare;
         
     }
     
 
-    function tokensReceived(
-        address operator,
+    function _reachedFundingGoal() internal view returns (bool) {
+        if (projectStatus==status.investing && balanceATN()<fundingGoal){
+            return false;
+        }
+        return true;
+    }
+    
+    function tokensReceived ( address operator,
         address from,
         address to,
         uint256 amount,
@@ -174,6 +252,11 @@ contract Project is IERC777Recipient{
 
     modifier hasAvailableShares() {
         require(availableShares > 0, "No available shares for this project");
+        _;
+    }
+    
+    modifier onlyDeployerOrFounder() {
+        require((msg.sender==founder || msg.sender==deployer), "You are neither the founder nor the deployer of this project.");
         _;
     }
     
@@ -241,14 +324,18 @@ contract User {
         string memory _description,
         string memory _code,
         string memory _iconurl,
-        string memory _category
+        string memory _category,
+        uint256 _fundingGoal,
+        uint256 _founderDividendPermille
     ) public onlyOwner {
         address project = source.createProject(
             _name,
             _description,
             _code,
             _iconurl,
-            _category
+            _category,
+            _fundingGoal,
+            _founderDividendPermille
         );
         asset memory bun = asset(address(project), 70000);
         assets.push(bun);
@@ -267,12 +354,12 @@ contract Source is IERC777Sender, ERC1820Implementer {
     mapping(address => uint256) investors;
     uint256 sold;
     
-    // TODO: DELETE THE FOLLOWING TWO ATTRIBUTES
-    uint256 public _tokenFirstSentAmount;
-    bytes public _userData;
-
+    mapping(address => bool) private _isRegisteredProject;
     bytes32 constant private TOKENS_SENDER_INTERFACE_HASH =
         0x29ddb589b1fb5fc7cf394961c1adf5f8c6454761adf795e67fe149f658abe895;
+    
+    
+    event StartTraining(address project,string repo);
     
     constructor() {
         sold = 0;
@@ -294,22 +381,9 @@ contract Source is IERC777Sender, ERC1820Implementer {
         );
     }
     
-
-    // function tokensReceived(
-    //     address operator,
-    //     //NOT THE RIGHT IMPLEMENTATION. JUST PATCHED ERRORS
-    //     address from,
-    //     address, /*to*/
-    //     uint256 amount,
-    //     bytes calldata, /*userData*/
-    //     bytes calldata /*operatorData*/
-    // ) external override {
-    //     require(msg.sender == address(banu), "Invalid token");
-    //     ceva = "there you have it";
-    //     investors[from] = amount;
-    //     operator = from;
-    //     //   like approve + transferFrom, but only one tx
-    // }
+    function startTraining(address project, string memory repo) external onlyProject(project) {
+        emit StartTraining(project, repo);
+    }
     
     function tokensToSend(
         address operator,
@@ -319,7 +393,6 @@ contract Source is IERC777Sender, ERC1820Implementer {
         bytes calldata userData,
         bytes calldata operatorData
     ) external override {
-
         // do stuff
         uint256 a = 1;
     }
@@ -352,7 +425,9 @@ contract Source is IERC777Sender, ERC1820Implementer {
         string memory _description,
         string memory _code,
         string memory _iconurl,
-        string memory _category
+        string memory _category,
+        uint256 _fundingGoal,
+        uint256 _founderDividendPermille
     ) public payable returns (address) {
         Project project = new Project(
             address(banu),
@@ -362,10 +437,17 @@ contract Source is IERC777Sender, ERC1820Implementer {
             _description,
             _iconurl,
             _category,
-            address(msg.sender)
+            address(msg.sender),
+            _fundingGoal,
+            _founderDividendPermille            
         );
-        projects.push(address(project));
+        _registerProject(address(project));
         return (address(project));
+    }
+    
+    function _registerProject(address project) internal {
+        projects.push(project);
+        _isRegisteredProject[project] = true;
     }
 
     function invest(address investor, address project, uint256 ATNamount, uint256 ETHamount) public payable returns (bool){
@@ -398,6 +480,11 @@ contract Source is IERC777Sender, ERC1820Implementer {
 
     function sell(uint256 amount) public payable {
         banu.operatorSend(msg.sender, address(this), amount, "asda", "asd");
+    }
+    
+    modifier onlyProject(address project){
+        require(_isRegisteredProject[project], "This project is not registered with this contract!");
+        _;
     }
 }
 
