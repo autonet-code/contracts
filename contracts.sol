@@ -34,7 +34,7 @@ contract Agent is ERC721 {
         nextTokenId++;
     }
     
-    function getEndpoint() external returns(string memory) {
+    function getEndpoint() external view returns(string memory) {
         require(msg.sender==project, "only the parent Preoject can get the endpoint for this token");
         return endpoint;
     }
@@ -53,11 +53,7 @@ contract Agent is ERC721 {
 contract Project is IERC777Recipient{
     Agent model;
     string code;
-    string public picurl;
-    string public category;
     string public name;
-    string public description;
-    string public catpicgit;
     string private endpoint;
     MainToken banu; 
     Source source;
@@ -90,9 +86,6 @@ contract Project is IERC777Recipient{
         address adresaLaSource,
         string memory _name,
         string memory _code,
-        string memory _description,
-        string memory _picurl,
-        string memory _category,
         address _founder,
         uint256 _fundingGoal,
         uint256 _founderDividendPermille
@@ -108,11 +101,7 @@ contract Project is IERC777Recipient{
         deployer = msg.sender;
         name = _name;
         code = _code;
-        category = _category;
-        description = _description;
-        picurl = _picurl;
         shares[founder] = founderShares;
-        catpicgit = append(category, picurl, code);
         
         _erc1820.setInterfaceImplementer(
             address(this),
@@ -179,17 +168,7 @@ contract Project is IERC777Recipient{
     }
 
     
-    function details()
-        public
-        view
-        returns (
-            string memory,
-            string memory,
-            string memory
-        )
-    {
-        return (name, description, catpicgit);
-    }
+
 
     function invest(uint256 ATNamount) public payable hasAvailableShares {
         require(
@@ -269,14 +248,9 @@ contract User {
     asset[] assets;
 
     constructor(address adresaLaBanu, address adresaLaOwner, address adresaLaSource) {
+        require(msg.sender==adresaLaSource, 'only the source contract can deploy the user');
         owner = adresaLaOwner;
-        if (msg.sender==adresaLaSource){
-            source = Source(msg.sender);
-        } else {
-            source = Source(adresaLaSource);
-            source.addUser(msg.sender);
-        }
-        
+        source = Source(msg.sender);
         banu = MainToken(adresaLaBanu);
     }
 
@@ -321,19 +295,13 @@ contract User {
 
     function createProject(
         string memory _name,
-        string memory _description,
         string memory _code,
-        string memory _iconurl,
-        string memory _category,
         uint256 _fundingGoal,
         uint256 _founderDividendPermille
     ) public onlyOwner {
         address project = source.createProject(
             _name,
-            _description,
             _code,
-            _iconurl,
-            _category,
             _fundingGoal,
             _founderDividendPermille
         );
@@ -344,14 +312,12 @@ contract User {
 
 contract Source is IERC777Sender, ERC1820Implementer {
     // SPDX-License-Identifier: MIT
-    string public ceva = "nu stiu";
     mapping(address => address) public users;
-    address public sefu;
+    address public owner;
     MainToken banu;
     address[] public projects;
-    uint256 initialPrice = 1000000000000000;
     address public tokenAddress;
-    mapping(address => uint256) investors;
+    // mapping(address => uint256) investors;
     uint256 sold;
     
     mapping(address => bool) private _isRegisteredProject;
@@ -359,14 +325,14 @@ contract Source is IERC777Sender, ERC1820Implementer {
         0x29ddb589b1fb5fc7cf394961c1adf5f8c6454761adf795e67fe149f658abe895;
     
     
-    event StartTraining(address project,string repo);
+    event StartTraining(address project, string repo);
     
     constructor() {
         sold = 0;
-        sefu = msg.sender;
+        owner = msg.sender;
         banu = new MainToken();
         tokenAddress = address(banu);
-        banu.imprima(1000000);
+        banu.imprima(1 * (10**6));
     }
 
     function clear() public {
@@ -381,7 +347,8 @@ contract Source is IERC777Sender, ERC1820Implementer {
         );
     }
     
-    function startTraining(address project, string memory repo) external onlyProject(project) {
+    function startTraining(address project, string memory repo) external {
+        require(_isRegisteredProject[project], "Not registered Project");
         emit StartTraining(project, repo);
     }
     
@@ -401,9 +368,9 @@ contract Source is IERC777Sender, ERC1820Implementer {
         return projects;
     }
 
-    function addUser(address user) external {
-        users[user] = msg.sender;
-    }
+    // function addUser(address contractAddress, address userAddress) external {
+    //     users[userAddress] = contractAddress;
+    // }
     
     function createUser() public payable returns (address) {
         User user = new User(tokenAddress, msg.sender, address(this));
@@ -411,9 +378,9 @@ contract Source is IERC777Sender, ERC1820Implementer {
         return address(user);
     }
 
-    function balanceETH() public view returns (uint256) {
-        return address(this).balance;
-    }
+    // function balanceETH() public view returns (uint256) {
+    //     return address(this).balance;
+    // }
 
     //https://www.youtube.com/watch?v=CVdZ09iqQj
     function balanceATN() public view returns (uint256) {
@@ -422,10 +389,7 @@ contract Source is IERC777Sender, ERC1820Implementer {
 
     function createProject(
         string memory _name,
-        string memory _description,
         string memory _code,
-        string memory _iconurl,
-        string memory _category,
         uint256 _fundingGoal,
         uint256 _founderDividendPermille
     ) public payable returns (address) {
@@ -434,9 +398,6 @@ contract Source is IERC777Sender, ERC1820Implementer {
             address(this),
             _name,
             _code,
-            _description,
-            _iconurl,
-            _category,
             address(msg.sender),
             _fundingGoal,
             _founderDividendPermille            
@@ -450,9 +411,9 @@ contract Source is IERC777Sender, ERC1820Implementer {
         _isRegisteredProject[project] = true;
     }
 
-    function invest(address investor, address project, uint256 ATNamount, uint256 ETHamount) public payable returns (bool){
+    function invest(address investor, address project, uint256 ATNamount, uint256 ETHamount) public payable{
         
-        banu.operatorSend(investor, project, ATNamount, "hallo", "auto");
+        banu.operatorSend(investor, project, ATNamount, "", "");
         
         uint256 ethValue = msg.value + ETHamount;
         bool success = true;
@@ -462,10 +423,8 @@ contract Source is IERC777Sender, ERC1820Implementer {
         }
         
         Project fundedProject = Project(project);
-        uint256 investedETH = (success ? ethValue : 0);
-        fundedProject.addToShares(investor, ATNamount, investedETH);
-        
-        return true;
+        fundedProject.addToShares(investor, ATNamount, (success ? ethValue : 0));
+
     }
 
     function buy() public payable {
@@ -474,18 +433,15 @@ contract Source is IERC777Sender, ERC1820Implementer {
             sold + cashu < banu.totalSupply(),
             "Total supply limit was reached. Trade amongst yourselves now."
         );
-        require(cashu < 500000000000000000000, "Can't buy more than 500 ATN.");
+        require(cashu < 500 * (10**18), "Can't buy more than 500 ATN.");
         banu.transfer(msg.sender, cashu);
     }
 
     function sell(uint256 amount) public payable {
-        banu.operatorSend(msg.sender, address(this), amount, "asda", "asd");
+        banu.operatorSend(msg.sender, address(this), amount, "", "");
     }
     
-    modifier onlyProject(address project){
-        require(_isRegisteredProject[project], "This project is not registered with this contract!");
-        _;
-    }
+    
 }
 
 contract MainToken is ERC777 {
