@@ -1,3 +1,4 @@
+
 pragma solidity ^0.7.0;
 // SPDX-License-Identifier: MIT
 // import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -57,7 +58,7 @@ contract Project is IERC777Recipient{
     string private endpoint;
     MainToken banu; 
     Source source;
-    address sourceContractAddress;
+    address payable sourceContractAddress;
     
     enum status { investing, training, validating, mature}
     status projectStatus;
@@ -91,8 +92,8 @@ contract Project is IERC777Recipient{
         uint256 _founderDividendPermille
     ) payable {
         banu = MainToken(adresaLaBanu);
-        sourceContractAddress = adresaLaSource;
-        source = Source(adresaLaSource);
+        sourceContractAddress = payable(adresaLaSource);
+        source = Source(sourceContractAddress);
         founder = _founder;
         founderDividendPermille = _founderDividendPermille;
         fundingGoal = _fundingGoal;
@@ -327,7 +328,7 @@ contract Source is IERC777Sender, ERC1820Implementer {
     
     event StartTraining(address project, string repo);
     
-    constructor() {
+    constructor() payable {
         sold = 0;
         owner = msg.sender;
         banu = new MainToken();
@@ -386,6 +387,11 @@ contract Source is IERC777Sender, ERC1820Implementer {
     function balanceATN() public view returns (uint256) {
         return banu.balanceOf(address(this));
     }
+    
+    function balanceETH() public view returns (uint256) {
+        return address(this).balance;
+    }
+
 
     function createProject(
         string memory _name,
@@ -440,6 +446,8 @@ contract Source is IERC777Sender, ERC1820Implementer {
     function sell(uint256 amount) public payable {
         banu.operatorSend(msg.sender, address(this), amount, "", "");
     }
+    
+    receive() external payable {} 
     
     
 }
