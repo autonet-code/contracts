@@ -2,7 +2,7 @@
 
 This repository contains smart contracts written in Solidity for Autonet - economy-as-a-service for deep learning applications. 
 
-The official production verszion of Autonet is deployed at https://autonet.live
+The official production version of Autonet is deployed at https://autonet.live
 
 The contracts are still in and testing/auditing stages, and are not intended for production use. The repository also includes some JSON files that contain the ABI (Application Binary Interface) of the contracts, which can be used to interact with them using web3.js or other libraries.
 
